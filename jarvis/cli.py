@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import random
 
-from jarvis import models, planner
+from jarvis import models, planner, review
 from jarvis.rewards import BOX_COST, InsufficientPoints, level_for_xp, xp_for_level
 
 
@@ -32,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("task_id", type=int)
 
     sub.add_parser("status", help="레벨/XP/streak 확인")
+    rp = sub.add_parser("report", help="달성률 리포트")
+    rp.add_argument("--days", type=int, default=7)
     sub.add_parser("open-box", help=f"포인트 {BOX_COST}로 랜덤 상자 열기")
     sub.add_parser("inventory", help="보유/착용 아이템 보기")
     e = sub.add_parser("equip", help="아이템 착용")
@@ -82,6 +84,8 @@ def run(argv: list[str], today: date | None = None, complete=None,
                 print(f"보스 클리어! 보너스 +{r['bonus_points']} 포인트")
             if r["leveled_up"]:
                 print("레벨 업!")
+        elif args.cmd == "report":
+            print(review.format_report(review.build_report(state, today, args.days)))
         elif args.cmd == "open-box":
             item = models.buy_box(state, rng or random.Random())
             print(f"상자 오픈! [{item.grade}] {item.name} ({item.slot}) "
