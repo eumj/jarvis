@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def run(argv: list[str], today: date | None = None, client=None) -> int:
+def run(argv: list[str], today: date | None = None, complete=None) -> int:
     args = build_parser().parse_args(argv)
     today = today or date.today()
     state = models.load()
@@ -48,7 +48,7 @@ def run(argv: list[str], today: date | None = None, client=None) -> int:
                                    args.goal, "boss" if args.boss else "normal")
             print(f"과제 #{task.id} 추가 ({task.due}, 난이도 {task.difficulty})")
         elif args.cmd == "plan":
-            items = planner.generate_plan(args.goal, args.days, client=client)
+            items = planner.generate_plan(args.goal, args.days, complete=complete)
             goal = models.add_goal(state, args.goal)
             for item, due in planner.schedule(items, today):
                 models.add_task(state, item.title, due, item.difficulty, goal.id)

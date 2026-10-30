@@ -1,11 +1,14 @@
-"""Split a goal into dated tasks with the Claude API."""
+"""Split a goal into dated tasks with an LLM via OpenRouter."""
 import json
 import os
 import re
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-MODEL = "claude-sonnet-5-5"
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL = "anthropic/claude-sonnet-4.5"   # override with OPENROUTER_MODEL
 MAX_ITEMS = 60
 
 PROMPT = """사용자의 자기계발 목표를 {days}일 안에 실행할 수 있는 작은 과제로 나눠 주세요.
@@ -59,37 +62,46 @@ def schedule(items: list[PlanItem], start: date) -> list[tuple[PlanItem, date]]:
     return [(i, start + timedelta(days=i.day - 1)) for i in items]
 
 
-def _default_client():
+def openrouter_complete(prompt: str) -> str:
+    """Send one prompt to OpenRouter and return the reply text."""
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if not key:
         raise PlannerError(
-            "ANTHROPIC_API_KEY가 없습니다. .env.example을 .env로 복사해 키를 넣어 주세요.")
-    import anthropic
-    return anthropic.Anthropic()
+            "OPENROUTER_API_KEY가 없습니다. .env.example을 .env로 복사해 키를 넣어 주세요.")
+    body = json.dumps({
+        "model": os.environ.get("OPENROUTER_MODEL", MODEL),
+        "max_tokens": 2000,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    req = urllib.request.Request(
+        API_URL, data=body, method="POST",
+        headers={"Authorization": f"Bearer {key.strip()}",
+                 "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.load(resp)
+        return data["choices"][0]["message"]["content"] or ""
+    except urllib.error.HTTPError as e:
+        raise PlannerError(f"API 호출 실패 (HTTP {e.code}). 키와 모델 이름을 확인하세요.") from e
+    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as e:
+        raise PlannerError(f"API 호출 실패: {e}") from e
 
 
-def generate_plan(goal: str, days: int, client=None, retries: int = 1) -> list[PlanItem]:
+def generate_plan(goal: str, days: int, complete=None, retries: int = 1) -> list[PlanItem]:
+    """`complete` is a prompt -> text function; defaults to OpenRouter."""
     if not goal.strip():
         raise PlannerError("목표가 비어 있습니다.")
     if not 1 <= days <= 90:
         raise PlannerError("기간은 1~90일 사이여야 합니다.")
-    client = client or _default_client()
+    complete = complete or openrouter_complete
     last_error = None
     for _ in range(retries + 1):
-        try:
-            reply = client.messages.create(
-                model=MODEL, max_tokens=2000,
-                messages=[{"role": "user",
-                           "content": PROMPT.format(goal=goal, days=days)}])
-        except PlannerError:
-            raise
-        except Exception as e:  # network/auth errors from the SDK
-            raise PlannerError(f"API 호출 실패: {e}") from e
-        text = "".join(b.text for b in reply.content if getattr(b, "text", None))
+        text = complete(PROMPT.format(goal=goal, days=days))
         try:
             return parse_plan(text, days)
         except PlannerError as e:

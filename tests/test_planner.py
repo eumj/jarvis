@@ -1,5 +1,4 @@
 from datetime import date
-from types import SimpleNamespace
 
 import pytest
 
@@ -10,15 +9,14 @@ from jarvis.planner import PlannerError, generate_plan, parse_plan, schedule
 GOOD = '[{"title": "변수", "difficulty": 1, "day": 1}, {"title": "함수", "difficulty": 2, "day": 3}]'
 
 
-class FakeClient:
-    """Returns the queued replies in order; counts calls."""
+class FakeLLM:
+    """A prompt -> text function that returns queued replies; counts calls."""
     def __init__(self, *replies):
         self.replies, self.calls = list(replies), 0
-        self.messages = SimpleNamespace(create=self._create)
 
-    def _create(self, **kwargs):
+    def __call__(self, prompt):
         self.calls += 1
-        return SimpleNamespace(content=[SimpleNamespace(text=self.replies.pop(0))])
+        return self.replies.pop(0)
 
 
 def test_parse_valid_and_code_fence():
@@ -47,38 +45,38 @@ def test_schedule_maps_day_to_date():
 
 
 def test_retry_once_then_succeed():
-    client = FakeClient("깨진 응답", GOOD)
-    assert len(generate_plan("파이썬", 7, client=client)) == 2
+    client = FakeLLM("깨진 응답", GOOD)
+    assert len(generate_plan("파이썬", 7, complete=client)) == 2
     assert client.calls == 2
 
 
 def test_gives_up_after_retry():
-    client = FakeClient("깨진", "또 깨진")
+    client = FakeLLM("깨진", "또 깨진")
     with pytest.raises(PlannerError):
-        generate_plan("파이썬", 7, client=client)
+        generate_plan("파이썬", 7, complete=client)
     assert client.calls == 2
 
 
 def test_empty_goal_and_bad_days_do_not_call_api():
-    client = FakeClient()
+    client = FakeLLM()
     with pytest.raises(PlannerError):
-        generate_plan("  ", 7, client=client)
+        generate_plan("  ", 7, complete=client)
     with pytest.raises(PlannerError):
-        generate_plan("x", 0, client=client)
+        generate_plan("x", 0, complete=client)
     assert client.calls == 0
 
 
 def test_missing_api_key_is_reported(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.chdir("/")   # avoid picking up a local .env
-    with pytest.raises(PlannerError, match="ANTHROPIC_API_KEY"):
+    with pytest.raises(PlannerError, match="OPENROUTER_API_KEY"):
         generate_plan("파이썬", 7)
 
 
 def test_cli_plan_creates_dated_tasks(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_DATA", str(tmp_path / "s.json"))
     assert run(["plan", "파이썬", "--days", "7"], today=date(2026, 10, 30),
-               client=FakeClient(GOOD)) == 0
+               complete=FakeLLM(GOOD)) == 0
     s = models.load()
     assert [t.due for t in s.tasks] == ["2026-10-30", "2026-11-01"]
     assert all(t.goal_id == s.goals[0].id for t in s.tasks)
@@ -87,5 +85,5 @@ def test_cli_plan_creates_dated_tasks(tmp_path, monkeypatch):
 def test_cli_plan_failure_saves_nothing(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("JARVIS_DATA", str(tmp_path / "s.json"))
     assert run(["plan", "파이썬"], today=date(2026, 10, 30),
-               client=FakeClient("x", "y")) == 1
+               complete=FakeLLM("x", "y")) == 1
     assert models.load().tasks == [] and "오류" in capsys.readouterr().out
