@@ -2,7 +2,7 @@
 import argparse
 from datetime import date
 
-from jarvis import models
+from jarvis import models, planner
 from jarvis.rewards import level_for_xp, xp_for_level
 
 
@@ -20,6 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--goal", type=int, default=None, help="목표 번호")
     t.add_argument("--boss", action="store_true", help="보스 스테이지 과제")
 
+    pl = sub.add_parser("plan", help="LLM으로 목표를 날짜별 과제로 분할")
+    pl.add_argument("goal")
+    pl.add_argument("--days", type=int, default=7)
+
     sub.add_parser("today", help="오늘 할 일")
 
     d = sub.add_parser("done", help="과제 완료")
@@ -29,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def run(argv: list[str], today: date | None = None) -> int:
+def run(argv: list[str], today: date | None = None, client=None) -> int:
     args = build_parser().parse_args(argv)
     today = today or date.today()
     state = models.load()
@@ -43,6 +47,13 @@ def run(argv: list[str], today: date | None = None) -> int:
             task = models.add_task(state, args.title, due, args.difficulty,
                                    args.goal, "boss" if args.boss else "normal")
             print(f"과제 #{task.id} 추가 ({task.due}, 난이도 {task.difficulty})")
+        elif args.cmd == "plan":
+            items = planner.generate_plan(args.goal, args.days, client=client)
+            goal = models.add_goal(state, args.goal)
+            for item, due in planner.schedule(items, today):
+                models.add_task(state, item.title, due, item.difficulty, goal.id)
+            print(f"목표 #{goal.id} '{goal.title}': 과제 {len(items)}개를 "
+                  f"{args.days}일에 배치했습니다.")
         elif args.cmd == "today":
             tasks = [t for t in state.tasks
                      if t.due <= today.isoformat() and not t.done]
@@ -61,6 +72,9 @@ def run(argv: list[str], today: date | None = None) -> int:
             print(f"레벨 {lv} | XP {state.xp} (다음 레벨까지 "
                   f"{xp_for_level(lv + 1) - state.xp}) | 포인트 {state.points} "
                   f"| 연속 {state.streak}일")
+    except planner.PlannerError as e:
+        print(f"오류: {e}")
+        return 1
     except (KeyError, ValueError) as e:
         print(f"오류: {e.args[0] if e.args else e}")
         return 1
