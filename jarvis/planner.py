@@ -62,6 +62,36 @@ def schedule(items: list[PlanItem], start: date) -> list[tuple[PlanItem, date]]:
     return [(i, start + timedelta(days=i.day - 1)) for i in items]
 
 
+BOSS_EVERY = 7
+
+BOSS_PROMPT = """목표 '{goal}'의 {day}일차 보스 스테이지(총복습 모의고사)를 만듭니다.
+지금까지 배운 내용: {topics}
+이 내용을 점검하는 모의고사/총복습 과제의 제목 한 줄만 출력하세요. 설명이나 따옴표는 쓰지 마세요."""
+
+
+def boss_days(days: int) -> list[int]:
+    """Review days: every BOSS_EVERY days, plus the last day. None for plans < 7 days."""
+    if days < BOSS_EVERY:
+        return []
+    result = list(range(BOSS_EVERY, days + 1, BOSS_EVERY))
+    if result[-1] != days:
+        result.append(days)
+    return result
+
+
+def generate_boss_title(goal: str, day: int, topics: list[str], complete=None) -> str:
+    """Boss task title from the LLM; falls back to a fixed title if the call fails."""
+    fallback = f"{day}일차 보스: 총복습 모의고사"
+    complete = complete or openrouter_complete
+    try:
+        text = complete(BOSS_PROMPT.format(
+            goal=goal, day=day, topics=", ".join(topics) or "(없음)"))
+    except PlannerError:
+        return fallback
+    title = text.strip().splitlines()[0].strip(" \"'`") if text and text.strip() else ""
+    return title if 0 < len(title) <= 80 else fallback
+
+
 def openrouter_complete(prompt: str) -> str:
     """Send one prompt to OpenRouter and return the reply text."""
     try:

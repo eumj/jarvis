@@ -5,6 +5,7 @@ from datetime import date
 
 XP_PER_DIFFICULTY = 10      # task XP = difficulty (1-3) * this
 BOSS_XP = 100
+BOSS_BONUS_POINTS = 50      # extra points on a boss clear, i.e. one loot box
 STREAK_BONUS_PER_DAY = 2    # extra XP per streak day
 STREAK_BONUS_CAP_DAYS = 7
 

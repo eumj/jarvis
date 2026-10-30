@@ -1,6 +1,6 @@
 """Command line interface: python -m jarvis.cli <command>"""
 import argparse
-from datetime import date
+from datetime import date, timedelta
 
 from jarvis import models, planner
 from jarvis.rewards import level_for_xp, xp_for_level
@@ -52,8 +52,14 @@ def run(argv: list[str], today: date | None = None, complete=None) -> int:
             goal = models.add_goal(state, args.goal)
             for item, due in planner.schedule(items, today):
                 models.add_task(state, item.title, due, item.difficulty, goal.id)
-            print(f"목표 #{goal.id} '{goal.title}': 과제 {len(items)}개를 "
-                  f"{args.days}일에 배치했습니다.")
+            bosses = planner.boss_days(args.days)
+            for day in bosses:
+                topics = [i.title for i in items if i.day <= day]
+                title = planner.generate_boss_title(args.goal, day, topics, complete)
+                models.add_task(state, title, today + timedelta(days=day - 1),
+                                3, goal.id, kind="boss")
+            print(f"목표 #{goal.id} '{goal.title}': 과제 {len(items)}개와 "
+                  f"보스 {len(bosses)}개를 {args.days}일에 배치했습니다.")
         elif args.cmd == "today":
             tasks = [t for t in state.tasks
                      if t.due <= today.isoformat() and not t.done]
@@ -65,6 +71,8 @@ def run(argv: list[str], today: date | None = None, complete=None) -> int:
         elif args.cmd == "done":
             r = models.complete_task(state, args.task_id, today)
             print(f"완료! +{r['xp']} XP, 연속 {r['streak']}일, 레벨 {r['level']}")
+            if r["bonus_points"]:
+                print(f"보스 클리어! 보너스 +{r['bonus_points']} 포인트")
             if r["leveled_up"]:
                 print("레벨 업!")
         elif args.cmd == "status":

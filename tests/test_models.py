@@ -39,10 +39,21 @@ def test_streak_continues_next_day():
     assert models.complete_task(s, b.id, D2)["streak"] == 2
 
 
-def test_boss_task_gives_boss_xp():
+def test_boss_task_gives_boss_xp_and_one_time_bonus():
     s = models.State()
     t = models.add_task(s, "모의고사", D1, kind="boss")
-    assert models.complete_task(s, t.id, D1)["xp"] >= 100
+    r = models.complete_task(s, t.id, D1)
+    assert r["xp"] >= 100 and r["bonus_points"] == 50
+    assert s.points == r["xp"] + 50
+    with pytest.raises(ValueError):
+        models.complete_task(s, t.id, D1)
+    assert s.points == r["xp"] + 50
+
+
+def test_normal_task_has_no_bonus():
+    s = models.State()
+    t = models.add_task(s, "a", D1)
+    assert models.complete_task(s, t.id, D1)["bonus_points"] == 0
 
 
 def test_save_load_roundtrip(tmp_path):

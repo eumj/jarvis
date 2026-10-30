@@ -4,7 +4,8 @@ import pytest
 
 from jarvis import models
 from jarvis.cli import run
-from jarvis.planner import PlannerError, generate_plan, parse_plan, schedule
+from jarvis.planner import (PlannerError, boss_days, generate_boss_title,
+                            generate_plan, parse_plan, schedule)
 
 GOOD = '[{"title": "변수", "difficulty": 1, "day": 1}, {"title": "함수", "difficulty": 2, "day": 3}]'
 
@@ -76,10 +77,42 @@ def test_missing_api_key_is_reported(monkeypatch):
 def test_cli_plan_creates_dated_tasks(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_DATA", str(tmp_path / "s.json"))
     assert run(["plan", "파이썬", "--days", "7"], today=date(2026, 10, 30),
-               complete=FakeLLM(GOOD)) == 0
+               complete=FakeLLM(GOOD, "7일차 파이썬 모의고사")) == 0
     s = models.load()
-    assert [t.due for t in s.tasks] == ["2026-10-30", "2026-11-01"]
+    assert [t.due for t in s.tasks] == ["2026-10-30", "2026-11-01", "2026-11-05"]
+    assert [t.kind for t in s.tasks] == ["normal", "normal", "boss"]
+    assert s.tasks[-1].title == "7일차 파이썬 모의고사"
     assert all(t.goal_id == s.goals[0].id for t in s.tasks)
+
+
+def test_cli_plan_boss_failure_keeps_normal_tasks_with_fallback_title(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_DATA", str(tmp_path / "s.json"))
+
+    def llm(prompt, _calls=[]):
+        _calls.append(1)
+        if len(_calls) == 1:
+            return GOOD
+        raise PlannerError("boom")
+
+    assert run(["plan", "파이썬", "--days", "7"], today=date(2026, 10, 30),
+               complete=llm) == 0
+    tasks = models.load().tasks
+    assert [t.kind for t in tasks] == ["normal", "normal", "boss"]
+    assert "총복습" in tasks[-1].title
+
+
+@pytest.mark.parametrize("days, expected", [
+    (3, []), (6, []), (7, [7]), (10, [7, 10]), (14, [7, 14]), (15, [7, 14, 15]),
+])
+def test_boss_days(days, expected):
+    assert boss_days(days) == expected
+
+
+def test_boss_title_cleanup_and_fallback():
+    assert generate_boss_title("g", 7, ["a"], lambda p: ' "모의고사 1회"\n설명') == "모의고사 1회"
+    assert "총복습" in generate_boss_title("g", 7, ["a"], lambda p: "   ")
+    assert "총복습" in generate_boss_title("g", 7, ["a"], lambda p: "x" * 200)
 
 
 def test_cli_plan_failure_saves_nothing(tmp_path, monkeypatch, capsys):

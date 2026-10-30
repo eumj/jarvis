@@ -5,7 +5,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 
-from jarvis.rewards import level_for_xp, task_xp, update_streak
+from jarvis.rewards import (BOSS_BONUS_POINTS, level_for_xp, task_xp,
+                            update_streak)
 
 DEFAULT_PATH = Path("data/state.json")
 
@@ -98,8 +99,9 @@ def complete_task(state: State, task_id: int, today: date) -> dict:
 
     task.done = True
     state.last_done = today.isoformat()
+    bonus = BOSS_BONUS_POINTS if task.kind == "boss" else 0
     state.xp += gained
-    state.points += gained
+    state.points += gained + bonus
     new_level = level_for_xp(state.xp)
-    return {"xp": gained, "streak": state.streak,
+    return {"xp": gained, "bonus_points": bonus, "streak": state.streak,
             "level": new_level, "leveled_up": new_level > old_level}
