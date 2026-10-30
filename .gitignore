@@ -1,0 +1,16 @@
+# secrets
+.env
+
+# python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# build / data / media
+dist/
+build/
+*.egg-info/
+*.mp4
+*.mov
