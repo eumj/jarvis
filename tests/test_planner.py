@@ -68,8 +68,9 @@ def test_empty_goal_and_bad_days_do_not_call_api():
 
 
 def test_missing_api_key_is_reported(monkeypatch):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.chdir("/")   # avoid picking up a local .env
+    # An empty value is kept by load_dotenv, so a real local .env can't leak
+    # into this test (and the test never reaches the network).
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     with pytest.raises(PlannerError, match="OPENROUTER_API_KEY"):
         generate_plan("파이썬", 7)
 

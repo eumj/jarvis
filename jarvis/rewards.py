@@ -93,7 +93,7 @@ class InsufficientPoints(Exception):
 def open_box(points: int, rng: random.Random) -> tuple[Item, int]:
     """Spend BOX_COST points to draw one item. Returns (item, points_left)."""
     if points < BOX_COST:
-        raise InsufficientPoints(f"need {BOX_COST} points, have {points}")
+        raise InsufficientPoints(f"필요 {BOX_COST}, 보유 {points}")
     grade = rng.choices(GRADES, weights=GRADE_WEIGHTS)[0]
     slot = rng.choice(SLOTS)
     name = rng.choice(ITEM_POOL[(grade, slot)])

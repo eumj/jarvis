@@ -117,9 +117,9 @@ def complete_task(state: State, task_id: int, today: date) -> dict:
     """Mark a task done and apply rewards. Returns a summary dict."""
     task = next((t for t in state.tasks if t.id == task_id), None)
     if task is None:
-        raise KeyError(f"no task with id {task_id}")
+        raise KeyError(f"{task_id}번 과제가 없습니다.")
     if task.done:
-        raise ValueError("task is already completed")
+        raise ValueError("이미 완료한 과제입니다.")
 
     last = date.fromisoformat(state.last_done) if state.last_done else None
     old_level = level_for_xp(state.xp)
