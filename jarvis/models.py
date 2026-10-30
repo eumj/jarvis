@@ -1,12 +1,13 @@
 """Data model, JSON persistence and task completion."""
 import json
 import os
+import random
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 
-from jarvis.rewards import (BOSS_BONUS_POINTS, level_for_xp, task_xp,
-                            update_streak)
+from jarvis.rewards import (BOSS_BONUS_POINTS, GRADES, SLOTS, Item,
+                            level_for_xp, open_box, task_xp, update_streak)
 
 DEFAULT_PATH = Path("data/state.json")
 
@@ -82,6 +83,34 @@ def add_task(state: State, title: str, due: date, difficulty: int = 1,
     task = Task(state.new_id(), goal_id, title, due.isoformat(), difficulty, kind)
     state.tasks.append(task)
     return task
+
+
+def buy_box(state: State, rng: random.Random) -> Item:
+    """Spend points on a loot box and add the item to the inventory."""
+    item, state.points = open_box(state.points, rng)
+    state.inventory.append(asdict(item))
+    return item
+
+
+def inventory_summary(state: State) -> list[tuple[dict, int]]:
+    """(item, count) pairs, rarest grade first."""
+    counts: dict[tuple, int] = {}
+    for it in state.inventory:
+        key = (it["grade"], it["slot"], it["name"])
+        counts[key] = counts.get(key, 0) + 1
+    ordered = sorted(counts.items(),
+                     key=lambda kv: (-GRADES.index(kv[0][0]), SLOTS.index(kv[0][1]),
+                                     kv[0][2]))
+    return [({"grade": g, "slot": s, "name": n}, c) for (g, s, n), c in ordered]
+
+
+def equip_item(state: State, name: str) -> dict:
+    """Wear an owned item; it replaces whatever is worn in the same slot."""
+    item = next((i for i in state.inventory if i["name"] == name), None)
+    if item is None:
+        raise KeyError(f"보유하지 않은 아이템입니다: {name}")
+    state.equipped[item["slot"]] = item["name"]
+    return item
 
 
 def complete_task(state: State, task_id: int, today: date) -> dict:

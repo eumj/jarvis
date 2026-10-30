@@ -2,8 +2,10 @@
 import argparse
 from datetime import date, timedelta
 
+import random
+
 from jarvis import models, planner
-from jarvis.rewards import level_for_xp, xp_for_level
+from jarvis.rewards import BOX_COST, InsufficientPoints, level_for_xp, xp_for_level
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,10 +32,15 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("task_id", type=int)
 
     sub.add_parser("status", help="레벨/XP/streak 확인")
+    sub.add_parser("open-box", help=f"포인트 {BOX_COST}로 랜덤 상자 열기")
+    sub.add_parser("inventory", help="보유/착용 아이템 보기")
+    e = sub.add_parser("equip", help="아이템 착용")
+    e.add_argument("name")
     return p
 
 
-def run(argv: list[str], today: date | None = None, complete=None) -> int:
+def run(argv: list[str], today: date | None = None, complete=None,
+        rng: random.Random | None = None) -> int:
     args = build_parser().parse_args(argv)
     today = today or date.today()
     state = models.load()
@@ -75,6 +82,19 @@ def run(argv: list[str], today: date | None = None, complete=None) -> int:
                 print(f"보스 클리어! 보너스 +{r['bonus_points']} 포인트")
             if r["leveled_up"]:
                 print("레벨 업!")
+        elif args.cmd == "open-box":
+            item = models.buy_box(state, rng or random.Random())
+            print(f"상자 오픈! [{item.grade}] {item.name} ({item.slot}) "
+                  f"- 남은 포인트 {state.points}")
+        elif args.cmd == "inventory":
+            if not state.inventory:
+                print("보유한 아이템이 없습니다. 포인트를 모아 open-box 해보세요.")
+            for it, n in models.inventory_summary(state):
+                worn = " (착용 중)" if state.equipped.get(it["slot"]) == it["name"] else ""
+                print(f"[{it['grade']}] {it['name']} ({it['slot']}) x{n}{worn}")
+        elif args.cmd == "equip":
+            item = models.equip_item(state, args.name)
+            print(f"{item['slot']}: {item['name']} 착용")
         elif args.cmd == "status":
             lv = level_for_xp(state.xp)
             print(f"레벨 {lv} | XP {state.xp} (다음 레벨까지 "
@@ -82,6 +102,9 @@ def run(argv: list[str], today: date | None = None, complete=None) -> int:
                   f"| 연속 {state.streak}일")
     except planner.PlannerError as e:
         print(f"오류: {e}")
+        return 1
+    except InsufficientPoints as e:
+        print(f"오류: 포인트가 부족합니다 ({e}).")
         return 1
     except (KeyError, ValueError) as e:
         print(f"오류: {e.args[0] if e.args else e}")
